@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload to API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            display: none;
+        }
+        .success { background-color: #dff0d8; color: #3c763d; }
+        .error { background-color: #f2dede; color: #a94442; }
+    </style>
+</head>
+<body>
+    <h2>Upload File to Convert</h2>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" name="file" accept=".pptx,.pdf,.docx" required>
+        <button type="submit">Upload</button>
+    </form>
+    <div id="response"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const responseDiv = document.getElementById('response');
+            responseDiv.style.display = 'block';
+            responseDiv.textContent = 'Uploading...';
+            responseDiv.className = '';
+
+            try {
+                const response = await fetch('http://localhost:8000/convert', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    responseDiv.className = 'success';
+                    responseDiv.textContent = JSON.stringify(data, null, 2);
+                } else {
+                    responseDiv.className = 'error';
+                    responseDiv.textContent = `Error: ${data.detail || JSON.stringify(data)}`;
+                }
+            } catch (error) {
+                responseDiv.className = 'error';
+                responseDiv.textContent = `Network Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
