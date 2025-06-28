@@ -42,6 +42,31 @@ generate_quizzes_on_document_function = {
     },
 }
 
+quiz_response_format = """
+[
+  {
+    "quiz_id": "none",
+    "question_text": "What is the primary focus of biology?",
+    "question_type": "multiple_choice",
+    "answers": [
+      {"option_text": "The study of inanimate objects", "is_correct": false},
+      {"option_text": "The scientific study of life and living organisms", "is_correct": true},
+      {"option_text": "The study of celestial bodies", "is_correct": false}
+    ]
+  },
+  {
+    "quiz_id": "none",
+    "question_text": "Which of the following is a fundamental theme of biology?",
+    "question_type": "multiple_choice",
+    "answers": [
+      {"option_text": "The cell as the basic unit of life", "is_correct": true},
+      {"option_text": "The study of weather patterns", "is_correct": false},
+      {"option_text": "The analysis of financial markets", "is_correct": false}
+    ]
+  }
+]
+"""
+
 
 def create_prompt(user_input: str) -> str:
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -194,6 +219,13 @@ def create_document_summarize_prompt(document: str) -> str:
     ]
 
     {document}"""
+
+
+def create_quizzes_on_notes_prompt(notes: str, response_format: str) -> str:
+    prompt = f"""Generate quizzes based on this content as JSON format. Here is the example response:
+    {quiz_response_format}
+    Here is the content: {notes}"""
+    return prompt
 
 
 # Configure the client and tools
