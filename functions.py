@@ -271,6 +271,56 @@ response = client.models.generate_content_stream(
     contents=create_prompt("What is the weather like in San Francisco?"),
     config=config,
 )
+def create_study_schedules_on_notes_prompt(
+    note_content: str, note_title: str, start_date: str, end_date: str
+) -> str:
+    prompt = f"""Generate study schedules based on the provided note content. Analyze the structured content and create a comprehensive study plan.
+
+        Input Data:
+        - Note Title: {note_title}
+        - Note Content: {note_content}
+        - Start Date: {start_date}
+        - End Date: {end_date}
+
+        Processing Instructions:
+        1. Extract all headings (type="heading") from the note content as main study topics
+        2. Distribute study sessions evenly between the start and end dates
+        3. Assign priority levels: "high" for fundamental concepts, "medium" for supporting topics, "low" for supplementary material
+        4. Estimate study time based on content complexity (15-120 minutes per session)
+        5. Set appropriate count values (1-5) based on topic importance and content depth
+
+        Return the response in this exact JSON format:
+        [
+        {{
+            "title": "Study Session Title",
+            "part": "Main Topic from Heading",
+            "dueDate": "YYYY-MM-DD",
+            "priority": "high|medium|low",
+            "count": 3,
+            "estimatedTime": 60
+        }},
+        {{
+            "title": "Another Study Session",
+            "part": "Another Topic from Heading",
+            "dueDate": "YYYY-MM-DD",
+            "priority": "medium",
+            "count": 2,
+            "estimatedTime": 45
+        }}
+        ]
+
+        Guidelines:
+        - Create study schedules for each major heading found in the content
+        - Ensure due dates fall between start_date and end_date
+        - Distribute sessions evenly across the time period
+        - Priority should reflect the importance and complexity of the topic
+        - Count represents the number of study sessions needed for that topic
+        - EstimatedTime should be in minutes (15-120 range)
+        - Title is what the user input
+        - Response must be JSON format
+
+        Analyze the following content and generate appropriate study schedules:"""
+    return prompt
 
 
 def book_a_meeting(date: str, time: str, topic: str) -> str:

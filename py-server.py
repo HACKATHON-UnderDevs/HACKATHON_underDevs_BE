@@ -225,6 +225,33 @@ async def generate_quizzes_on_notes(request: CreateQuizzesRequest):
     return {"quizzes": quizzes}
 
 
+class CreateStudySchedulesRequest(BaseModel):
+    note_content: str
+    note_title: str
+    startDate: str
+    endDate: str
+
+
+@app.post("/study-sets")
+async def generate_study_schedules_on_notes(request: CreateStudySchedulesRequest):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=functions.create_study_schedules_on_notes_prompt(
+            request.note_content,
+            request.note_title,
+            request.startDate,
+            request.endDate,
+        ),
+    )
+
+    schedules_str = clean_json_string(response.text)
+    print(schedules_str)
+
+    schedules = json.loads(schedules_str)
+
+    return {"study_sets": schedules}
+
+
 @app.post("/flashcards")
 async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
     try:
@@ -245,7 +272,9 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
         for flashcard in flashcards:
             flashcard["flashcard_set_id"] = request.flashcard_set_id
             print(f"Flashcard: {flashcard}")
-            print("---------------------------------------------------------------------")
+            print(
+                "---------------------------------------------------------------------"
+            )
 
         return {"flashcards": flashcards}
 
@@ -255,7 +284,9 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
         raise HTTPException(status_code=500, detail="Failed to parse AI response")
     except Exception as e:
         print(f"Error generating flashcards: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating flashcards: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error generating flashcards: {str(e)}"
+        )
 
 
 @app.post("/quizzes/create")
