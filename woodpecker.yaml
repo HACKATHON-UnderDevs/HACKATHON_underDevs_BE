@@ -1,0 +1,9 @@
+when:
+  event: push
+  branch: main
+
+steps:
+  - name: build
+    image: bash
+    commands:
+      - echo "This is the build step"
