@@ -244,7 +244,7 @@ class CreateStudySchedulesRequest(BaseModel):
 async def generate_study_schedules_on_notes(request: CreateStudySchedulesRequest):
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=functions.create_study_schedule_prompt(
+        contents=functions.create_study_schedules_on_notes_prompt(
             request.note_content,
             request.note_title,
             request.startDate,
@@ -255,9 +255,9 @@ async def generate_study_schedules_on_notes(request: CreateStudySchedulesRequest
     schedules_str = clean_json_string(response.text)
     print(schedules_str)
 
-    schedules = json.loads(schedules_str)
+    # schedules = json.loads(schedules_str)
 
-    return {"study_sets": schedules}
+    return {"study_sets": schedules_str}
 
 
 @app.post("/flashcards")
