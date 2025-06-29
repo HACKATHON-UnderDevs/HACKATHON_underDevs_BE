@@ -221,15 +221,17 @@ def create_document_summarize_prompt(document: str) -> str:
     {document}"""
 
 
-def create_quizzes_on_notes_prompt(notes: str, response_format: str) -> str:
-    prompt = f"""Generate quizzes based on this content as JSON format. Here is the example response:
+def create_quizzes_on_notes_prompt(notes: str, response_format: str, question_count: int = 5) -> str:
+    prompt = f"""Generate exactly {question_count} quiz questions based on this content as JSON format. Here is the example response:
     {response_format}
+    
+    Important: Generate exactly {question_count} questions, no more, no less.
     Here is the content: {notes}"""
     return prompt
 
 
-def create_flashcards_on_notes_prompt(notes: str) -> str:
-    prompt = f"""Generate flashcards based on this content as JSON format. Create question-answer pairs that help with learning and memorization.
+def create_flashcards_on_notes_prompt(notes: str, card_count: int = 10) -> str:
+    prompt = f"""Generate exactly {card_count} flashcards based on this content as JSON format. Create question-answer pairs that help with learning and memorization.
     
     Return the response in this exact JSON format:
     [
@@ -246,7 +248,7 @@ def create_flashcards_on_notes_prompt(notes: str) -> str:
     ]
     
     Guidelines:
-    - Create 5-10 flashcards
+    - Create exactly {card_count} flashcards
     - Questions should be clear and specific
     - Answers should be concise but complete
     - Focus on key concepts, definitions, and important facts
@@ -254,6 +256,21 @@ def create_flashcards_on_notes_prompt(notes: str) -> str:
     
     Here is the content: {notes}"""
     return prompt
+
+
+# Configure the client and tools
+client = genai.Client(api_key="AIzaSyDoGgguMGOlyTmJUxBMnEh7Frfb9GJWJCU")
+tools = types.Tool(function_declarations=[generate_quizzes_on_document_function])
+config = types.GenerateContentConfig(
+    tools=[tools],
+)
+
+
+response = client.models.generate_content_stream(
+    model="gemini-2.5-flash",
+    contents=create_prompt("What is the weather like in San Francisco?"),
+    config=config,
+)
 
 
 def book_a_meeting(date: str, time: str, topic: str) -> str:

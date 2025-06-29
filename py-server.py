@@ -1,36 +1,22 @@
-from datetime import date
-from functools import partial
 import json
-import sys
 from typing import List
-from fastapi import FastAPI, HTTPException, File, UploadFile, WebSocket
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastrtc import (
-    AdditionalOutputs,
-    ReplyOnPause,
-    Stream,
-    get_cloudflare_turn_credentials,
-    get_cloudflare_turn_credentials_async,
-)
 from google import genai
 from google.genai import types
 from asyncio import sleep
 import uuid
 import shutil
 import os
-import gradio
 from markitdown import MarkItDown
 from dotenv import load_dotenv
 from convert import clean_json_string
 from functions import create_prompt
 from pydantic import BaseModel
 import functions
-from groq import Groq
-from elevenlabs import ElevenLabs
-import numpy as np
-
-import voice
+from datetime import datetime
+from dataclasses import dataclass
 
 app = FastAPI()
 md = MarkItDown()
@@ -38,15 +24,9 @@ md = MarkItDown()
 load_dotenv()
 gemini_api_key = os.environ.get("GEMINI_API_KEY", "empty")
 if not gemini_api_key or gemini_api_key == "empty":
-    raise ValueError("GEMINI_API_KEY environment variable is not set or is empty.")
-
+    raise ValueError("GOOGLE_API_KEY environment variable is not set or is empty.")
 
 client = genai.Client(api_key=gemini_api_key)
-groq_client = voice.groq_client
-tts_client = voice.tts_client
-hf_token = os.environ.get("HUGGING_FACE_API_KEY", "empty")
-if not hf_token or hf_token == "empty":
-    raise ValueError("HUGGINGFACE environment variable is not set or is empty.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,89 +37,9 @@ app.add_middleware(
 )
 
 
-# Cloudflare TURN credentials function
-async def get_turn_credentials():
-    """Get Cloudflare TURN credentials with HF token"""
-    if hf_token:
-        try:
-            return await get_cloudflare_turn_credentials_async(hf_token=hf_token)
-        except Exception as e:
-            # Fallback to basic STUN servers
-            return {
-                "iceServers": [
-                    {"urls": "stun:stun.l.google.com:19302"},
-                    {"urls": "stun:global.stun.twilio.com:3478"},
-                ]
-            }
-    else:
-        # Fallback configuration
-        return {
-            "iceServers": [
-                {"urls": "stun:stun.l.google.com:19302"},
-                {"urls": "stun:global.stun.twilio.com:3478"},
-                {"urls": "stun:stun.services.mozilla.com:3478"},
-            ]
-        }
-
-
 @app.get("/")
 def root():
     return {"message": "Welcome to the FastAPI application!"}
-
-
-class StartSessionRequest(BaseModel):
-    note_content: str
-    title: str = "Learning with Vibe Learning"
-
-
-async def get_credentials():
-    return await get_cloudflare_turn_credentials_async(hf_token=hf_token)
-
-
-@app.post("/start-voice-session")
-async def start_voice_session(request: StartSessionRequest):
-    try:
-        print("hf_token:", hf_token)
-        # Create handler with context
-        handler_with_context = partial(
-            voice.voice_teacher_handler, note_content=request.note_content
-        )
-
-        stream = Stream(
-            handler=ReplyOnPause(handler_with_context, input_sample_rate=16000),
-            modality="audio",
-            mode="send-receive",
-            rtc_configuration=get_turn_credentials,  # Async function for client
-            ui_args={
-                "title": request.title,
-                "chatbot_initial": [
-                    {
-                        "role": "assistant",
-                        "content": "Hello! I'm ready to help you review your notes. What would you like to go over first?",
-                    }
-                ],
-            },
-        )
-
-        # Launch with enhanced configuration
-        share_url = stream.ui.launch(
-            share=True,
-            strict_cors=False,
-            server_name="0.0.0.0",
-            server_port=None,  # Let Gradio choose
-            ssl_verify=False,
-        )
-
-        return {
-            "session_url": share_url,
-            "turn_provider": "cloudflare" if hf_token else "fallback",
-            "rtc_config": "cloudflare_enhanced",
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create session: {str(e)}"
-        )
 
 
 @app.post("/documents")
@@ -163,6 +63,7 @@ async def generate_note_from_documents(file: UploadFile = File(...)):
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=functions.create_document_summarize_prompt(content),
+            config=functions.config,
         )
         summary = response.text  # Adjust based on actual response structure
 
@@ -184,11 +85,13 @@ async def generate_note_from_documents(file: UploadFile = File(...)):
 class CreateQuizzesRequest(BaseModel):
     quiz_id: str
     note_content: str
+    question_count: int = 5
 
 
 class CreateFlashcardsRequest(BaseModel):
     flashcard_set_id: str
     note_content: str
+    card_count: int = 10
 
 
 class FlashcardResponse(BaseModel):
@@ -209,6 +112,95 @@ class QuestionResponse:
     answers: List[AnswerResponse]
 
 
+class CreateQuizRequest(BaseModel):
+    title: str
+    subject: str
+    user_id: str
+    note_id: str
+    note_content: str
+    question_count: int = 5
+
+
+@dataclass
+class QuizAnswer:
+    """Represents a quiz answer option"""
+    option_text: str
+    is_correct: bool
+    answer_order: int
+
+
+@dataclass
+class QuizQuestion:
+    """Represents a quiz question with multiple answers"""
+    question_text: str
+    question_type: str
+    question_order: int
+    answers: List[QuizAnswer]
+
+
+@dataclass
+class Quiz:
+    """Represents a complete quiz with metadata and questions"""
+    quiz_id: str
+    title: str
+    subject: str
+    user_id: str
+    note_id: str
+    questions: List[QuizQuestion]
+
+
+def generate_quiz_id() -> str:
+    """Generate a unique quiz ID"""
+    timestamp = int(datetime.now().timestamp() * 1000)
+    random_suffix = uuid.uuid4().hex[:8]
+    return f"quiz_{timestamp}_{random_suffix}"
+
+
+def create_quiz_from_content(title: str, subject: str, user_id: str, note_id: str,
+                           note_content: str, question_count: int = 5) -> Quiz:
+    """Create a complete quiz from note content"""
+    # Generate unique quiz ID
+    quiz_id = generate_quiz_id()
+    
+    # Use the existing quiz generation logic
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=functions.create_quizzes_on_notes_prompt(
+            note_content, functions.quiz_response_format, question_count
+        ),
+    )
+    
+    quizzes_str = clean_json_string(response.text)
+    quizzes = json.loads(quizzes_str)
+    
+    # Parse backend response
+    questions = []
+    for idx, q_data in enumerate(quizzes):
+        answers = []
+        for ans_idx, answer_data in enumerate(q_data.get("answers", [])):
+            answers.append(QuizAnswer(
+                option_text=answer_data["option_text"],
+                is_correct=answer_data["is_correct"],
+                answer_order=ans_idx + 1
+            ))
+        
+        questions.append(QuizQuestion(
+            question_text=q_data["question_text"],
+            question_type=q_data.get("question_type", "multiple_choice"),
+            question_order=idx + 1,
+            answers=answers
+        ))
+    
+    return Quiz(
+        quiz_id=quiz_id,
+        title=title,
+        subject=subject,
+        user_id=user_id,
+        note_id=note_id,
+        questions=questions
+    )
+
+
 @app.post("/quizzes")
 async def generate_quizzes_on_notes(request: CreateQuizzesRequest):
     print(request.note_content, functions.quiz_response_format)
@@ -216,37 +208,7 @@ async def generate_quizzes_on_notes(request: CreateQuizzesRequest):
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=functions.create_quizzes_on_notes_prompt(
-            request.note_content, functions.quiz_response_format
-        ),
-    )
-
-    quizzes_str = clean_json_string(response.text)
-    print(quizzes_str)
-
-    quizzes = json.loads(quizzes_str)
-
-    for quiz in quizzes:
-        quiz["quiz_id"] = request.quiz_id
-        print(f"{quiz}\n")
-        print("---------------------------------------------------------------------\n")
-
-    return {"quizzes": quizzes}
-
-
-class CreateStudySchedulesRequest(BaseModel):
-    note_content: str
-    startDay: date
-    deadlineDay: date
-
-
-@app.post("/study-schedules")
-async def generate_study_schedules_on_notes(request: CreateQuizzesRequest):
-    print(request.note_content, functions.quiz_response_format)
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=functions.create_quizzes_on_notes_prompt(
-            request.note_content, functions.quiz_response_format
+            request.note_content, functions.quiz_response_format, request.question_count
         ),
     )
 
@@ -271,7 +233,7 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=functions.create_flashcards_on_notes_prompt(request.note_content),
+            contents=functions.create_flashcards_on_notes_prompt(request.note_content, request.card_count),
         )
 
         flashcards_str = clean_json_string(response.text)
@@ -294,6 +256,60 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
     except Exception as e:
         print(f"Error generating flashcards: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating flashcards: {str(e)}")
+
+
+@app.post("/quizzes/create")
+async def create_quiz(request: CreateQuizRequest):
+    """Create a quiz from note content and return it as JSON for frontend to handle"""
+    try:
+        print(f"Creating quiz: {request.title}")
+        print(f"User ID: {request.user_id}")
+        print(f"Subject: {request.subject}")
+        print(f"Question count: {request.question_count}")
+        
+        # Create quiz from content
+        quiz = create_quiz_from_content(
+            title=request.title,
+            subject=request.subject,
+            user_id=request.user_id,
+            note_id=request.note_id,
+            note_content=request.note_content,
+            question_count=request.question_count
+        )
+        
+        # Return quiz data for frontend to handle database operations
+        return {
+            "success": True,
+            "quiz": {
+                "quiz_id": quiz.quiz_id,
+                "title": quiz.title,
+                "subject": quiz.subject,
+                "user_id": quiz.user_id,
+                "note_id": quiz.note_id,
+                "question_count": len(quiz.questions),
+                "questions": [
+                    {
+                        "question_text": q.question_text,
+                        "question_type": q.question_type,
+                        "question_order": q.question_order,
+                        "answers": [
+                            {
+                                "option_text": a.option_text,
+                                "is_correct": a.is_correct,
+                                "answer_order": a.answer_order
+                            } for a in q.answers
+                        ]
+                    } for q in quiz.questions
+                ]
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error creating quiz: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating quiz: {str(e)}")
+
+
+
 
 
 if __name__ == "__main__":
