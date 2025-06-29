@@ -223,7 +223,35 @@ def create_document_summarize_prompt(document: str) -> str:
 
 def create_quizzes_on_notes_prompt(notes: str, response_format: str) -> str:
     prompt = f"""Generate quizzes based on this content as JSON format. Here is the example response:
-    {quiz_response_format}
+    {response_format}
+    Here is the content: {notes}"""
+    return prompt
+
+
+def create_flashcards_on_notes_prompt(notes: str) -> str:
+    prompt = f"""Generate flashcards based on this content as JSON format. Create question-answer pairs that help with learning and memorization.
+    
+    Return the response in this exact JSON format:
+    [
+      {{
+        "flashcard_set_id": "none",
+        "question": "What is the main concept?",
+        "answer": "The detailed explanation of the main concept"
+      }},
+      {{
+        "flashcard_set_id": "none", 
+        "question": "Define key term X",
+        "answer": "Key term X means..."
+      }}
+    ]
+    
+    Guidelines:
+    - Create 5-10 flashcards
+    - Questions should be clear and specific
+    - Answers should be concise but complete
+    - Focus on key concepts, definitions, and important facts
+    - Avoid yes/no questions
+    
     Here is the content: {notes}"""
     return prompt
 
