@@ -256,149 +256,55 @@ def create_flashcards_on_notes_prompt(notes: str) -> str:
     return prompt
 
 
-def create_study_schedule_prompt(
-    note_title: str, note_content: str, start_date: str, end_date: str
+def create_study_schedules_on_notes_prompt(
+    note_content: str, note_title: str, start_date: str, end_date: str
 ) -> str:
-    prompt = """
-    You are a highly capable assistant tasked with generating a study schedule in JSON format based on a provided `CreateStudySchedulesRequest` object. The input includes:
+    prompt = f"""Generate study schedules based on the provided note content. Analyze the structured content and create a comprehensive study plan.
 
-    - `note_title`: A string representing the title of the study schedule.
-    - `note_content`: A JSON array of objects, where each object represents a content block (e.g., heading or paragraph) with properties like `id`, `type`, `props`, `content`, and `children`. Headings have `type: "heading"` and a `props.level` indicating their level (e.g., 2 or 3).
-    - `startDate`: The start date of the study schedule (in YYYY-MM-DD format).
-    - `endDate`: The end date of the study schedule (in YYYY-MM-DD format).
+        Input Data:
+        - Note Title: {note_title}
+        - Note Content: {note_content}
+        - Start Date: {start_date}
+        - End Date: {end_date}
 
-    Your task is to create a study schedule in the following JSON format:
+        Processing Instructions:
+        1. Extract all headings (type="heading") from the note content as main study topics
+        2. Distribute study sessions evenly between the start and end dates
+        3. Assign priority levels: "high" for fundamental concepts, "medium" for supporting topics, "low" for supplementary material
+        4. Estimate study time based on content complexity (15-120 minutes per session)
+        5. Set appropriate count values (1-5) based on topic importance and content depth
 
-    [
-    {
-        "title": "<note_title>",
-        "part": "<heading text>",
-        "dueDate": "<YYYY-MM-DD>",
-        "priority": "<high|medium|low>",
-        "count": <integer>,
-        "estimatedTime": <integer>
-    },
-    ...
-    ]
+        Return the response in this exact JSON format:
+        [
+        {{
+            "title": "Study Session Title",
+            "part": "Main Topic from Heading",
+            "dueDate": "YYYY-MM-DD",
+            "priority": "high|medium|low",
+            "count": 3,
+            "estimatedTime": 60
+        }},
+        {{
+            "title": "Another Study Session",
+            "part": "Another Topic from Heading",
+            "dueDate": "YYYY-MM-DD",
+            "priority": "medium",
+            "count": 2,
+            "estimatedTime": 45
+        }}
+        ]
 
-    **Requirements:**
+        Guidelines:
+        - Create study schedules for each major heading found in the content
+        - Ensure due dates fall between start_date and end_date
+        - Distribute sessions evenly across the time period
+        - Priority should reflect the importance and complexity of the topic
+        - Count represents the number of study sessions needed for that topic
+        - EstimatedTime should be in minutes (15-120 range)
+        - Title is what the user input
+        - Response must be JSON format
 
-    1. **Extract Headings**: Identify all objects in `note_content` with `type: "heading"`. Use the `text` field from the `content` array of these objects as the `part` value in the output.
-    2. **Title**: Set the `title` field of each schedule entry to the provided `note_title`.
-    3. **Due Dates**: Distribute due dates evenly between `startDate` and `endDate` (inclusive) for each heading. Ensure dates are in YYYY-MM-DD format and assigned sequentially.
-    4. **Priority**: Assign priorities (`high`, `medium`, `low`) based on the importance of the content under each heading, not the heading level. Evaluate importance by analyzing the content of paragraphs following each heading. For example:
-    - Content introducing core concepts or foundational knowledge (e.g., definitions, key principles) is `high` priority.
-    - Content discussing benefits, advantages, or secondary details is `medium` priority.
-    - Content covering specific features, tools, or less critical details is `low` priority.
-    5. **Count and Estimated Time**:
-    - `count`: Estimate the number of study tasks or items based on the content length or complexity under each heading (e.g., number of paragraphs or sentences). Use reasonable heuristics (e.g., 5–20 tasks per heading based on content size).
-    - `estimatedTime`: Estimate the time (in minutes) required for studying the content under each heading. Base this on content length or complexity (e.g., 10–30 minutes per heading).
-    6. **Validation**:
-    - Ensure `startDate` is not later than `endDate`.
-    - If no headings are found in `note_content`, return an empty array.
-    - Handle malformed input gracefully (e.g., missing fields or invalid dates).
-    7. **Output**: Return a JSON array of schedule entries, sorted by `dueDate`.
-
-    **Example Input:**
-
-    {
-    "note_title": "C# Learning",
-    "note_content": [
-        {
-        "id": "2f196ccd-ebcd-4a53-95ce-aeb245742494",
-        "type": "heading",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left", "level": 2, "isToggleable": false },
-        "content": [ { "type": "text", "text": "REST APIs with .NET and C#", "styles": { "bold": true } } ],
-        "children": []
-        },
-        {
-        "id": "2b7a6170-db1a-4901-895a-74df2b51e3c6",
-        "type": "paragraph",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left" },
-        "content": [ { "type": "text", "text": "REST (Representational State of Resource) APIs, or Application Programming Interfaces, are used for building services that can be consumed by a wide range of clients, including web browsers and mobile devices. They rely on a stateless, client-server, cacheable communications protocol, and in the case of .NET and C#, are typically built using the ASP.NET framework.", "styles": {} } ],
-        "children": []
-        },
-        {
-        "id": "cba82c6c-8e37-435e-95d6-1989f0bbfc81",
-        "type": "heading",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left", "level": 3, "isToggleable": false },
-        "content": [ { "type": "text", "text": "Benefits of Using .NET and C# for REST APIs", "styles": {} } ],
-        "children": []
-        },
-        {
-        "id": "b18f92cd-94ea-4832-b03b-3f6b560a41b3",
-        "type": "paragraph",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left" },
-        "content": [ { "type": "text", "text": "With ASP.NET you use the same framework and patterns to build both web pages and services, side-by-side in the same project.", "styles": {} }, { "type": "link", "href": "http://ASP.NET", "content": [ { "type": "text", "text": "ASP.NET", "styles": {} } ] }, { "type": "text", "text": " you use the same framework and patterns to build both web pages and services, side-by-side in the same project.", "styles": {} } ],
-        "children": []
-        },
-        {
-        "id": "1d2b4bcc-9271-4992-a85d-52589afb7d81",
-        "type": "heading",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left", "level": 3, "isToggleable": false },
-        "content": [ { "type": "text", "text": "Key Features of REST APIs with .NET and C#", "styles": {} } ],
-        "children": []
-        },
-        {
-        "id": "466c86ab-8cc7-4f19-982f-d91e2e9727ee",
-        "type": "paragraph",
-        "props": { "textColor": "default", "backgroundColor": "default", "textAlignment": "left" },
-        "content": [ { "type": "text", "text": "Some key features of REST APIs built using .NET and C# include support for HTTP methods such as GET, POST, PUT, and DELETE, as well as support for JSON and XML data formats. Additionally, .NET and C# provide a range of tools and libraries for building and consuming REST APIs, including ASP.NET Web API and HttpClient.", "styles": {} } ],
-        "children": []
-        },
-        ...
-    ],
-    "startDate": "2025-10-25",
-    "endDate": "2025-10-30"
-    }
-
-    **Example Output:**
-
-    [
-    {
-        "title": "C# Learning",
-        "part": "REST APIs with .NET and C#",
-        "dueDate": "2025-10-25",
-        "priority": "high",
-        "count": 15,
-        "estimatedTime": 20
-    },
-    {
-        "title": "C# Learning",
-        "part": "Benefits of Using .NET and C# for REST APIs",
-        "dueDate": "2025-10-27",
-        "priority": "medium",
-        "count": 10,
-        "estimatedTime": 15
-    },
-    {
-        "title": "C# Learning",
-        "part": "Key Features of REST APIs with .NET and C#",
-        "dueDate": "2025-10-29",
-        "priority": "low",
-        "count": 12,
-        "estimatedTime": 18
-    }
-    ]
-
-    **Instructions:**
-
-    - Process the provided input and generate a study schedule following the above requirements.
-    - Use reasonable heuristics for `count` and `estimatedTime` based on the content under each heading.
-    - Ensure the output is a valid JSON array, properly formatted.
-    - If any issues arise (e.g., invalid dates or missing headings), return an empty array or handle gracefully with appropriate defaults.
-
-    **Input to Process:**
-
-    {
-    "note_title": "C# Learning",
-    "note_content": <provided note_content>,
-    "startDate": "2025-10-25",
-    "endDate": "2025-10-30"
-    }
-
-    Generate the study schedule in JSON format.
-    """
+        Analyze the following content and generate appropriate study schedules:"""
     return prompt
 
 
