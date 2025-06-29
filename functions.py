@@ -256,21 +256,6 @@ def create_flashcards_on_notes_prompt(notes: str) -> str:
     return prompt
 
 
-# Configure the client and tools
-client = genai.Client(api_key="AIzaSyDoGgguMGOlyTmJUxBMnEh7Frfb9GJWJCU")
-tools = types.Tool(function_declarations=[generate_quizzes_on_document_function])
-config = types.GenerateContentConfig(
-    tools=[tools],
-)
-
-
-response = client.models.generate_content_stream(
-    model="gemini-2.5-flash",
-    contents=create_prompt("What is the weather like in San Francisco?"),
-    config=config,
-)
-
-
 def book_a_meeting(date: str, time: str, topic: str) -> str:
     result = {
         "status": "success",

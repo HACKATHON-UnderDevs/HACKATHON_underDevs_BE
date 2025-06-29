@@ -1,20 +1,36 @@
+from datetime import date
+from functools import partial
 import json
+import sys
 from typing import List
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, WebSocket
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastrtc import (
+    AdditionalOutputs,
+    ReplyOnPause,
+    Stream,
+    get_cloudflare_turn_credentials,
+    get_cloudflare_turn_credentials_async,
+)
 from google import genai
 from google.genai import types
 from asyncio import sleep
 import uuid
 import shutil
 import os
+import gradio
 from markitdown import MarkItDown
 from dotenv import load_dotenv
 from convert import clean_json_string
 from functions import create_prompt
 from pydantic import BaseModel
 import functions
+from groq import Groq
+from elevenlabs import ElevenLabs
+import numpy as np
+
+import voice
 
 app = FastAPI()
 md = MarkItDown()
@@ -22,9 +38,15 @@ md = MarkItDown()
 load_dotenv()
 gemini_api_key = os.environ.get("GEMINI_API_KEY", "empty")
 if not gemini_api_key or gemini_api_key == "empty":
-    raise ValueError("GOOGLE_API_KEY environment variable is not set or is empty.")
+    raise ValueError("GEMINI_API_KEY environment variable is not set or is empty.")
+
 
 client = genai.Client(api_key=gemini_api_key)
+groq_client = voice.groq_client
+tts_client = voice.tts_client
+hf_token = os.environ.get("HUGGING_FACE_API_KEY", "empty")
+if not hf_token or hf_token == "empty":
+    raise ValueError("HUGGINGFACE environment variable is not set or is empty.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,9 +57,89 @@ app.add_middleware(
 )
 
 
+# Cloudflare TURN credentials function
+async def get_turn_credentials():
+    """Get Cloudflare TURN credentials with HF token"""
+    if hf_token:
+        try:
+            return await get_cloudflare_turn_credentials_async(hf_token=hf_token)
+        except Exception as e:
+            # Fallback to basic STUN servers
+            return {
+                "iceServers": [
+                    {"urls": "stun:stun.l.google.com:19302"},
+                    {"urls": "stun:global.stun.twilio.com:3478"},
+                ]
+            }
+    else:
+        # Fallback configuration
+        return {
+            "iceServers": [
+                {"urls": "stun:stun.l.google.com:19302"},
+                {"urls": "stun:global.stun.twilio.com:3478"},
+                {"urls": "stun:stun.services.mozilla.com:3478"},
+            ]
+        }
+
+
 @app.get("/")
 def root():
     return {"message": "Welcome to the FastAPI application!"}
+
+
+class StartSessionRequest(BaseModel):
+    note_content: str
+    title: str = "Learning with Vibe Learning"
+
+
+async def get_credentials():
+    return await get_cloudflare_turn_credentials_async(hf_token=hf_token)
+
+
+@app.post("/start-voice-session")
+async def start_voice_session(request: StartSessionRequest):
+    try:
+        print("hf_token:", hf_token)
+        # Create handler with context
+        handler_with_context = partial(
+            voice.voice_teacher_handler, note_content=request.note_content
+        )
+
+        stream = Stream(
+            handler=ReplyOnPause(handler_with_context, input_sample_rate=16000),
+            modality="audio",
+            mode="send-receive",
+            rtc_configuration=get_turn_credentials,  # Async function for client
+            ui_args={
+                "title": request.title,
+                "chatbot_initial": [
+                    {
+                        "role": "assistant",
+                        "content": "Hello! I'm ready to help you review your notes. What would you like to go over first?",
+                    }
+                ],
+            },
+        )
+
+        # Launch with enhanced configuration
+        share_url = stream.ui.launch(
+            share=True,
+            strict_cors=False,
+            server_name="0.0.0.0",
+            server_port=None,  # Let Gradio choose
+            ssl_verify=False,
+        )
+
+        return {
+            "session_url": share_url,
+            "turn_provider": "cloudflare" if hf_token else "fallback",
+            "rtc_config": "cloudflare_enhanced",
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create session: {str(e)}"
+        )
 
 
 @app.post("/documents")
@@ -61,7 +163,6 @@ async def generate_note_from_documents(file: UploadFile = File(...)):
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=functions.create_document_summarize_prompt(content),
-            config=functions.config,
         )
         summary = response.text  # Adjust based on actual response structure
 
@@ -110,6 +211,36 @@ class QuestionResponse:
 
 @app.post("/quizzes")
 async def generate_quizzes_on_notes(request: CreateQuizzesRequest):
+    print(request.note_content, functions.quiz_response_format)
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=functions.create_quizzes_on_notes_prompt(
+            request.note_content, functions.quiz_response_format
+        ),
+    )
+
+    quizzes_str = clean_json_string(response.text)
+    print(quizzes_str)
+
+    quizzes = json.loads(quizzes_str)
+
+    for quiz in quizzes:
+        quiz["quiz_id"] = request.quiz_id
+        print(f"{quiz}\n")
+        print("---------------------------------------------------------------------\n")
+
+    return {"quizzes": quizzes}
+
+
+class CreateStudySchedulesRequest(BaseModel):
+    note_content: str
+    startDay: date
+    deadlineDay: date
+
+
+@app.post("/study-schedules")
+async def generate_study_schedules_on_notes(request: CreateQuizzesRequest):
     print(request.note_content, functions.quiz_response_format)
 
     response = client.models.generate_content(

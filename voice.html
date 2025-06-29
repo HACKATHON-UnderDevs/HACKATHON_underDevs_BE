@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voice Dialogue</title>
+</head>
+<body>
+    <h1>Voice Dialogue with LLM</h1>
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+    <audio id="audioPlayer" controls></audio>
+    <script>
+        const ws = new WebSocket('ws://localhost:8000/voice-dialogue');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const audioPlayer = document.getElementById('audioPlayer');
+        let mediaRecorder;
+        let audioChunks = [];
+        let noteContent = `[{"id":"9bb8c85a-eed2-4d32-ad27-27aa0b675101","type":"paragraph",...}]`; // Replace with actual note content
+
+        ws.onopen = () => {
+            console.log('WebSocket connection established');
+            ws.send(noteContent); // Send note content first
+        };
+
+        ws.onmessage = (event) => {
+            if (event.data instanceof Blob) {
+                const audioBlob = new Blob([event.data], { type: 'audio/pcm' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+            } else {
+                console.log('Message:', event.data);
+            }
+        };
+
+        ws.onclose = () => console.log('WebSocket connection closed');
+        ws.onerror = (error) => console.error('WebSocket error:', error);
+
+        startBtn.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/pcm' });
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                
+                // Ensure byte length is a multiple of 2 by trimming if necessary
+                const byteLength = arrayBuffer.byteLength;
+                const validByteLength = byteLength - (byteLength % 2); // Round down to nearest multiple of 2
+                if (validByteLength === 0) {
+                    console.error('No valid audio data to send');
+                    return;
+                }
+                const trimmedArrayBuffer = arrayBuffer.slice(0, validByteLength);
+                const audioData = new Int16Array(trimmedArrayBuffer);
+
+                ws.send(audioData); // Send audio data after note content
+            };
+
+            mediaRecorder.start();
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        };
+
+        stopBtn.onclick = () => {
+            mediaRecorder.stop();
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        };
+    </script>
+</body>
+</html>
