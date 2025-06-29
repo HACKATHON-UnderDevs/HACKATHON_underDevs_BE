@@ -235,32 +235,29 @@ async def generate_quizzes_on_notes(request: CreateQuizzesRequest):
 
 class CreateStudySchedulesRequest(BaseModel):
     note_content: str
-    startDay: date
-    deadlineDay: date
+    note_title: str
+    startDate: str
+    endDate: str
 
 
-@app.post("/study-schedules")
-async def generate_study_schedules_on_notes(request: CreateQuizzesRequest):
-    print(request.note_content, functions.quiz_response_format)
-
+@app.post("/study-sets")
+async def generate_study_schedules_on_notes(request: CreateStudySchedulesRequest):
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=functions.create_quizzes_on_notes_prompt(
-            request.note_content, functions.quiz_response_format
+        contents=functions.create_study_schedule_prompt(
+            request.note_content,
+            request.note_title,
+            request.startDate,
+            request.endDate,
         ),
     )
 
-    quizzes_str = clean_json_string(response.text)
-    print(quizzes_str)
+    schedules_str = clean_json_string(response.text)
+    print(schedules_str)
 
-    quizzes = json.loads(quizzes_str)
+    schedules = json.loads(schedules_str)
 
-    for quiz in quizzes:
-        quiz["quiz_id"] = request.quiz_id
-        print(f"{quiz}\n")
-        print("---------------------------------------------------------------------\n")
-
-    return {"quizzes": quizzes}
+    return {"study_sets": schedules}
 
 
 @app.post("/flashcards")
@@ -283,7 +280,9 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
         for flashcard in flashcards:
             flashcard["flashcard_set_id"] = request.flashcard_set_id
             print(f"Flashcard: {flashcard}")
-            print("---------------------------------------------------------------------")
+            print(
+                "---------------------------------------------------------------------"
+            )
 
         return {"flashcards": flashcards}
 
@@ -293,7 +292,9 @@ async def generate_flashcards_on_notes(request: CreateFlashcardsRequest):
         raise HTTPException(status_code=500, detail="Failed to parse AI response")
     except Exception as e:
         print(f"Error generating flashcards: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating flashcards: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error generating flashcards: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
