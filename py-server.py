@@ -255,9 +255,9 @@ async def generate_study_schedules_on_notes(request: CreateStudySchedulesRequest
     schedules_str = clean_json_string(response.text)
     print(schedules_str)
 
-    # schedules = json.loads(schedules_str)
+    schedules = json.loads(schedules_str)
 
-    return {"study_sets": schedules_str}
+    return {"study_sets": schedules}
 
 
 @app.post("/flashcards")
